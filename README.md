@@ -1,8 +1,11 @@
 随着科技不断发展，数据越来越丰富，数据分析的重要性也日益凸显。为了找到数据分析相关工作， 因此开始系统学习相关知识，并在这里记录自己的学习过程。
+
 一.Power bi
 
 1.介绍
+
 Power BI 是微软推出的一款商业智能与数据可视化工具，能够连接多种数据源，对数据进行清洗、建模、分析，并通过交互式报表和仪表板直观展示分析结果。它广泛应用于企业数据分析、经营决策和业务监控等场景，是数据分析学习中非常重要的工具之一。
+
 1）主要由几个部分组成：
 Power BI Desktop：安装在电脑上的桌面工具，常用于导入数据、清洗数据、建立模型、制作报表。
 Power BI Service：云端服务，用于发布、共享、查看仪表板和报表。
@@ -19,4 +22,5 @@ Power BI Mobile：移动端查看报表。
 Power Query（数据清洗与转换）、数据建模（表关系、星型模型）、DAX（计算字段和度量值）、报表设计（可视化与交互）以及 发布与共享。我的学习路径以项目驱动为为主导，围绕这些内容展开的。
 
 2.项目实战
-我这里主要是在小破站跟练学习。URL地址为https://www.bilibili.com/video/BV1Hz4y1N7NH/?spm_id_from=333.1007.top_right_bar_window_history.content.click&vd_source=730193a1fd84fa6069effc7dcaf71b52
+我这里主要是在小破站跟练学习。
+URL地址为https://www.bilibili.com/video/BV1Hz4y1N7NH/?spm_id_from=333.1007.top_right_bar_window_history.content.click&vd_source=730193a1fd84fa6069effc7dcaf71b52
