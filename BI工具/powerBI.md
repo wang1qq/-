@@ -108,3 +108,14 @@ dDate = ADDCOLUMNS (
 )
 
 该 DAX 公式用于创建日期表 dDate。首先通过 CALENDARAUTO() 自动生成完整的日期范围，再利用 ADDCOLUMNS() 为日期表添加年份、季度、月份及相应的排序字段。这样做的目的是为了便于后续按照年、季度、月份等维度进行筛选和展示，同时保证时间字段在图表中能够按照正确的时间顺序排列，并为后续的时间智能分析提供基础。
+
+之后，新建Dax表，用来保存销售数量，销售收入，销售成本，毛利，毛利率等指标。
+
+<img width="216" height="189" alt="image" src="https://github.com/user-attachments/assets/c0500100-2006-4796-ac08-089d411e134f" />
+
+3.数据看板的设计
+最后一步比较繁琐，主要是设计看板，挑选颜色，总的来说，可以在可视化这一部分进行调整，设置
+<img width="226" height="596" alt="image" src="https://github.com/user-attachments/assets/830e7d27-d80b-4715-9de8-ee156b4d2f93" />
+
+4.成品展示
+<img width="1288" height="731" alt="image" src="https://github.com/user-attachments/assets/f7150bf7-8975-41e6-abcd-5bfaf8427c21" />
