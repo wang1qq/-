@@ -1,0 +1,26 @@
+import requests
+from bs4 import BeautifulSoup
+from lxml import etree
+url="https://www.e169c08b.icu/book/135090/"
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36 Edg/114.0.1823.51",
+}
+resp = requests.get(url,headers = headers)
+# print(resp.text)
+page_content=BeautifulSoup(resp.text,"html.parser")
+dd = page_content.find_all("dd")[1:]
+for d in dd:
+    link=d.find("a").get("href")
+    print(link)
+    part = link.split('/')[-1]
+    number = part.split('.')[0]
+    # print("https://www.e169c08b.icu/"+link)
+    chapt_url="https://www.e169c08b.icu/"+link
+    chapt_content=requests.get(chapt_url,headers=headers)
+    # print(chapt_content.text)
+    html = etree.HTML(chapt_content.text)
+    chapt = html.xpath("//div[@id='chaptercontent']//text()")
+    with open(f"novel/{number}.txt",mode="w",encoding="utf-8") as f:
+        chapt = [text.strip() for text in chapt if text.strip()]
+        chapt_str = "\n".join(chapt)
+        f.write(chapt_str)
