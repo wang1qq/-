@@ -1,1 +1,43 @@
 
+from bs4 import BeautifulSoup
+import requests
+import re
+from lxml import etree
+from urllib3.packages.six import moves
+
+#re
+#     page_content=resp.text
+#     obj =re.compile(r'<li>.*?<span class="title">(?P<name>.*?)</span>.*?<p>.*?导演:(?P<dy>.*?)<br>(?P<year>.*?)&nbsp;/&nbsp;.*?<span class="rating_num" property="v:average">(?P<rating_num>.*?)</span>',re.S)
+#     results = obj.finditer(page_content)
+#     for it in results:
+#         print(it.group("name"),end='  ')
+#         print(it.group("dy").strip(),end='  ')
+#         print(it.group("year").strip(),end='  ')
+#         print(it.group("rating_num"))
+
+#bs4
+# find(标签，属性=值) 只找第一条
+# find_all(标签，属性=值) 找全部符合要求的
+    # bs44
+    # page_content = BeautifulSoup(resp.text,"html.parser")
+    # movie_items =page_content.find_all("div",class_="item")
+    # # print(movie_item)
+    # for movie_item in movie_items:
+    #     movie_url   = movie_item.find("a").get("href")
+    #     movie_title = movie_item.find("span",class_="title").text
+    #     print(movie_url,end=" ")
+    #     print(movie_title)
+    
+for numbers in range(51):
+    if numbers % 25 != 0:
+        continue
+    url=f"https://movie.douban.com/top250?start={numbers}"
+    headers ={"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0"}
+    resp=requests.get(url , headers = headers)
+    html=etree.HTML(resp.text)
+    lis=html.xpath("/html/body/div[3]/div[1]/div/div[1]/ol/li")
+    for li in lis:
+        title=li.xpath("./div/div[2]/div[1]/a/span[1]/text()")
+        movie_rel=li.xpath("./div/div[2]/div[1]/a/@href")
+        print(title)
+        print(movie_rel)
