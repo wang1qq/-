@@ -1,0 +1,290 @@
+import re
+import time
+import json
+from pathlib import Path
+from datetime import datetime
+
+import requests
+import pandas as pd
+from wandb.util import mkdir_exists_ok
+
+# =========================
+# 1. 基础配置
+# =========================
+VIDEO_URL = "https://www.bilibili.com/video/BV1eh411U7Hx/"
+OUTPUT_DIR = Path("output")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+RAW_JSON_PATH = OUTPUT_DIR / "bilibili_comments_raw.json"
+CLEAN_CSV_PATH = OUTPUT_DIR / "bilibili_comments_clean.csv"
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://www.bilibili.com/",
+}
+
+REQUEST_TIMEOUT = 15
+SLEEP_SECONDS = 1
+
+
+# =========================
+# 2. 工具函数
+# =========================
+def extract_bvid(video_url: str) -> str:
+    """
+    从 B 站视频链接中提取 BV 号
+    """
+    match = re.search(r"(BV[0-9A-Za-z]+)", video_url)
+    if not match:
+        raise ValueError(f"无法从链接中提取 BV 号：{video_url}")
+    return match.group(1)
+
+
+def get_video_info(bvid: str) -> dict:
+    """
+    获取视频基础信息
+    接口示例：
+    https://api.bilibili.com/x/web-interface/view?bvid=BVxxxx
+    """
+    url = "https://api.bilibili.com/x/web-interface/view"
+    params = {"bvid": bvid}
+
+    resp = requests.get(url, headers=HEADERS, params=params, timeout=REQUEST_TIMEOUT)
+    resp.raise_for_status()
+
+    data = resp.json()
+    if data.get("code") != 0:
+        raise ValueError(f"获取视频信息失败：{data}")
+
+    info = data["data"]
+    return {
+        "bvid": info.get("bvid"),
+        "aid": info.get("aid"),
+        "cid": info.get("cid"),
+        "title": info.get("title"),
+        "desc": info.get("desc"),
+        "pubdate": info.get("pubdate"),
+        "owner_name": (info.get("owner") or {}).get("name"),
+        "owner_mid": (info.get("owner") or {}).get("mid"),
+        "stat": info.get("stat", {}),
+    }
+
+
+def flatten_comment(item: dict, parent_comment_id=None, comment_level=1):
+    """
+    把 B 站评论 JSON 拍平为表格结构
+    """
+    member = item.get("member", {}) or {}
+    content = item.get("content", {}) or {}
+
+    row = {
+        "comment_id": item.get("rpid"),
+        "parent_comment_id": parent_comment_id,
+        "root_comment_id": item.get("root"),
+        "user_mid": member.get("mid"),
+        "user_name": member.get("uname"),
+        "message": content.get("message"),
+        "like_count": item.get("like", 0),
+        "reply_count": item.get("rcount", 0),
+        "ctime": item.get("ctime"),
+        "comment_level": comment_level,
+    }
+
+    rows = [row]
+
+    replies = item.get("replies") or []
+    for reply in replies:
+        rows.extend(
+            flatten_comment(
+                reply,
+                parent_comment_id=item.get("rpid"),
+                comment_level=2
+            )
+        )
+
+    return rows
+
+
+def fetch_comments_by_api(aid: int, max_pages: int = 10) -> list:
+    """
+    尝试抓取评论。
+    这是实验性写法：如果 B 站接口风控或变更，可能失败。
+    """
+    all_rows = []
+    next_cursor = 0
+
+    for page in range(max_pages):
+        url = "https://api.bilibili.com/x/v2/reply/main"
+        params = {
+            "oid": aid,     # 视频 aid
+            "type": 1,      # 视频评论
+            "mode": 3,      # 常见排序/分页模式
+            "next": next_cursor
+        }
+
+        print(f"正在抓取第 {page + 1} 页评论... next={next_cursor}")
+
+        resp = requests.get(url, headers=HEADERS, params=params, timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+
+        data = resp.json()
+        if data.get("code") != 0:
+            raise ValueError(f"评论接口返回异常：{data}")
+
+        page_data = data.get("data", {}) or {}
+        replies = page_data.get("replies") or []
+
+        if not replies:
+            print("当前页没有评论，抓取结束。")
+            break
+
+        for item in replies:
+            all_rows.extend(flatten_comment(item))
+
+        cursor = page_data.get("cursor", {}) or {}
+        next_cursor = cursor.get("next", 0)
+
+        if not next_cursor:
+            print("没有下一页了，抓取结束。")
+            break
+
+        time.sleep(SLEEP_SECONDS)
+
+    return all_rows
+
+
+def clean_text(text: str) -> str:
+    """
+    对评论文本做基础清洗
+    """
+    if text is None:
+        return ""
+
+    text = str(text).strip()
+
+    # 去 URL
+    text = re.sub(r"http[s]?://\S+|www\.\S+", " ", text)
+
+    # 去 @用户
+    text = re.sub(r"@[\w\u4e00-\u9fa5_-]+", " ", text)
+
+    # 去多余空白
+    text = re.sub(r"\s+", " ", text).strip()
+
+    # 去特殊字符（保留中文、英文、数字、基本标点）
+    text = re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9，。！？、,.!?；;：:（）()《》<>“”\"' ]+", " ", text)
+
+    # 压缩重复字符：比如 哈哈哈哈哈 -> 哈哈
+    text = re.sub(r"(.)\1{3,}", r"\1\1", text)
+
+    # 再清一次多空格
+    text = re.sub(r"\s+", " ", text).strip()
+
+    return text
+
+
+def clean_comments(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    数据清洗：
+    1. 去空
+    2. 去重
+    3. 文本清洗
+    4. 时间格式化
+    5. 增加长度字段
+    """
+    df = df.copy()
+
+    # message 转字符串
+    df["message"] = df["message"].astype(str)
+
+    # 去空评论
+    df = df[df["message"].str.strip() != ""].copy()
+
+    # 先按 comment_id 去重
+    if "comment_id" in df.columns:
+        df = df.drop_duplicates(subset=["comment_id"])
+
+    # 清洗文本
+    df["clean_text"] = df["message"].apply(clean_text)
+
+    # 清洗后再次去空
+    df = df[df["clean_text"].str.strip() != ""].copy()
+
+    # 评论长度
+    df["text_len"] = df["clean_text"].apply(len)
+
+    # 时间字段格式化
+    df["comment_time"] = pd.to_datetime(df["ctime"], unit="s", errors="coerce")
+    df["comment_time"] = df["comment_time"].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    # 排序：按时间升序
+    df = df.sort_values(by="ctime", ascending=True).reset_index(drop=True)
+
+    return df
+
+
+# =========================
+# 3. 主流程
+# =========================
+def main():
+    print("开始执行 B 站评论爬虫...")
+
+    try:
+        bvid = extract_bvid(VIDEO_URL)
+        print(f"提取到 BV 号：{bvid}")
+
+        video_info = get_video_info(bvid)
+        print("视频信息获取成功：")
+        print(json.dumps(video_info, ensure_ascii=False, indent=2))
+
+        aid = video_info["aid"]
+        title = video_info["title"]
+
+        raw_rows = fetch_comments_by_api(aid=aid, max_pages=10)
+
+        if not raw_rows:
+            print("未抓取到评论数据。")
+            return
+
+        # 保存原始 JSON
+        with open(RAW_JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump(raw_rows, f, ensure_ascii=False, indent=2)
+
+        print(f"原始评论已保存：{RAW_JSON_PATH}")
+
+        # 转 DataFrame
+        raw_df = pd.DataFrame(raw_rows)
+        print(f"原始评论条数：{len(raw_df)}")
+
+        # 清洗
+        clean_df = clean_comments(raw_df)
+        print(f"清洗后评论条数：{len(clean_df)}")
+
+        # 增加视频标题列，方便后续分析
+        clean_df.insert(0, "video_title", title)
+        clean_df.insert(1, "bvid", bvid)
+        clean_df.insert(2, "aid", aid)
+
+        # 保存 CSV
+        clean_df.to_csv(CLEAN_CSV_PATH, index=False, encoding="utf-8-sig")
+        print(f"清洗后的 CSV 已保存：{CLEAN_CSV_PATH}")
+
+        print("\n前 5 条清洗结果：")
+        print(clean_df.head())
+
+    except Exception as e:
+        print("\n程序执行失败。")
+        print("可能原因：")
+        print("1. 评论接口被风控")
+        print("2. 接口参数发生变化")
+        print("3. 当前网络环境请求被拦截")
+        print("4. 视频评论需要更完整的请求上下文")
+        print(f"\n具体错误：{e}")
+
+
+if __name__ == "__main__":
+    main()
